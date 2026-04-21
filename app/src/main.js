@@ -1,5 +1,9 @@
 import { marked } from 'marked';
 import hljs from 'highlight.js';
+import { setupTauriBridge } from './tauri-bridge.js';
+
+// Installe window.electronAPI si on tourne dans Tauri (avant toute détection)
+await setupTauriBridge();
 
 // ─── Configuration de marked ─────────────────────────────────────────────────
 marked.setOptions({
@@ -34,12 +38,13 @@ const wordCount   = document.getElementById('word-count');
 const charCount   = document.getElementById('char-count');
 const divider     = document.getElementById('divider');
 
-// ─── Détection contexte Electron ─────────────────────────────────────────────
-// En intégrant Electron, window.electronAPI sera exposé via preload.js
+// ─── Détection contexte natif (Electron ou Tauri) ──────────────────────────
 const isElectron = typeof window.electronAPI !== 'undefined';
+const isTauri = window.__IS_TAURI__ === true;
 
 if (isElectron) {
-  document.getElementById('web-warning').textContent = '✓ Mode Electron — toutes les fonctionnalités disponibles';
+  const label = isTauri ? 'Mode Tauri' : 'Mode Electron';
+  document.getElementById('web-warning').textContent = `✓ ${label} — toutes les fonctionnalités disponibles`;
   document.getElementById('web-warning').style.background = 'rgba(166,227,161,0.1)';
   document.getElementById('web-warning').style.color = 'var(--success)';
   document.getElementById('web-warning').style.borderColor = 'rgba(166,227,161,0.2)';
@@ -71,6 +76,13 @@ function updateCursorPos() {
 }
 
 // ─── Gestion du titre / état non sauvegardé ────────────────────────────────
+function syncWindowTitle() {
+  if (!isElectron || !window.electronAPI.setWindowTitle) return;
+  const name = state.currentFile ? state.currentFile.split(/[\\/]/).pop() : 'Sans titre';
+  const mark = state.isDirty ? ' •' : '';
+  window.electronAPI.setWindowTitle(`Markdownitor — ${name}${mark}`);
+}
+
 function setDirty(dirty) {
   state.isDirty = dirty;
   unsavedDot.classList.toggle('hidden', !dirty);
@@ -78,6 +90,7 @@ function setDirty(dirty) {
   if (isElectron && window.electronAPI.setWindowModified) {
     window.electronAPI.setWindowModified(dirty);
   }
+  syncWindowTitle();
 }
 
 function setCurrentFile(filePath) {
@@ -88,6 +101,7 @@ function setCurrentFile(filePath) {
   } else {
     fileName.textContent = '— Sans titre';
   }
+  syncWindowTitle();
 }
 
 // ─── Toast notifications ───────────────────────────────────────────────────

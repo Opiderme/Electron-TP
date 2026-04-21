@@ -7,9 +7,13 @@
     "start": "electron .",
     "dev": "concurrently \"npm run dev --prefix app\" \"wait-on http://localhost:5173 && cross-env NODE_ENV=development electron .\"",
     "build": "npm run build --prefix app",
-    "pack": "npm run build && electron-builder --dir"
+    "pack": "npm run build && electron-builder --dir",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "^2.10.1",
     "concurrently": "^8.2.0",
     "cross-env": "^7.0.3",
     "electron": "^31.0.0",
@@ -26,8 +30,14 @@
       "electron/**/*",
       "app/dist/**/*"
     ],
-    "win": { "target": "nsis" },
-    "mac": { "target": "dmg" },
-    "linux": { "target": "AppImage" }
+    "win": {
+      "target": "nsis"
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   }
 }
