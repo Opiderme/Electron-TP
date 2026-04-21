@@ -16,7 +16,7 @@ struct FileData {
 }
 
 #[tauri::command]
-async fn open_file(app: tauri::AppHandle) -> Result<Option<FileData>, String> {
+fn open_file(app: tauri::AppHandle) -> Result<Option<FileData>, String> {
     let picked = app
         .dialog()
         .file()
@@ -34,12 +34,12 @@ async fn open_file(app: tauri::AppHandle) -> Result<Option<FileData>, String> {
 }
 
 #[tauri::command]
-async fn save_file(path: String, content: String) -> Result<(), String> {
+fn save_file(path: String, content: String) -> Result<(), String> {
     fs::write(&path, content).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-async fn save_file_as(
+fn save_file_as(
     app: tauri::AppHandle,
     content: String,
 ) -> Result<Option<String>, String> {
@@ -72,11 +72,26 @@ fn notify(app: tauri::AppHandle, title: String, body: String) -> Result<(), Stri
 }
 
 #[tauri::command]
-fn confirm_close(window: tauri::WebviewWindow, ok: bool) -> Result<(), String> {
+fn confirm_close(app: tauri::AppHandle, window: tauri::WebviewWindow, ok: bool, is_quit: Option<bool>) -> Result<(), String> {
     if ok {
-        window.hide().map_err(|e| e.to_string())?;
+        if is_quit.unwrap_or(false) {
+            app.exit(0);
+        } else {
+            window.hide().map_err(|e| e.to_string())?;
+        }
     }
     Ok(())
+}
+
+#[tauri::command]
+fn ask_close(app: tauri::AppHandle) -> Result<bool, String> {
+    let ans = app.dialog()
+        .message("Des modifications non enregistrées seront perdues. Quitter quand même ?")
+        .kind(tauri_plugin_dialog::MessageDialogKind::Warning)
+        .title("Markdownitor")
+        .buttons(tauri_plugin_dialog::MessageDialogButtons::OkCancelCustom("Quitter".to_string(), "Annuler".to_string()))
+        .blocking_show();
+    Ok(ans)
 }
 
 fn show_main_window(app: &tauri::AppHandle) {
@@ -92,6 +107,13 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.unminimize();
+                let _ = w.set_focus();
+            }
+        }))
         .invoke_handler(tauri::generate_handler![
             open_file,
             save_file,
@@ -99,6 +121,7 @@ pub fn run() {
             set_window_title,
             notify,
             confirm_close,
+            ask_close,
         ])
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -112,24 +135,30 @@ pub fn run() {
             // ── Menu applicatif ───────────────────────────────────────────────
             let file_menu = SubmenuBuilder::new(app, "Fichier")
                 .item(
-                    &MenuItemBuilder::with_id("open", "Ouvrir…")
-                        .accelerator("CmdOrCtrl+O")
+                    &MenuItemBuilder::with_id("new", "Nouveau")
+                        .accelerator("Ctrl+N")
+                        .build(app)?,
+                )
+                .separator()
+                .item(
+                    &MenuItemBuilder::with_id("open", "Ouvrir...")
+                        .accelerator("Ctrl+O")
                         .build(app)?,
                 )
                 .item(
                     &MenuItemBuilder::with_id("save", "Enregistrer")
-                        .accelerator("CmdOrCtrl+S")
+                        .accelerator("Ctrl+S")
                         .build(app)?,
                 )
                 .item(
-                    &MenuItemBuilder::with_id("save-as", "Enregistrer sous…")
-                        .accelerator("CmdOrCtrl+Shift+S")
+                    &MenuItemBuilder::with_id("save-as", "Enregistrer sous...")
+                        .accelerator("Ctrl+Shift+S")
                         .build(app)?,
                 )
                 .separator()
                 .item(
                     &MenuItemBuilder::with_id("quit", "Quitter")
-                        .accelerator("CmdOrCtrl+Q")
+                        .accelerator("Ctrl+Q")
                         .build(app)?,
                 )
                 .build()?;
@@ -147,13 +176,26 @@ pub fn run() {
             let view_menu = SubmenuBuilder::new(app, "Affichage")
                 .item(
                     &MenuItemBuilder::with_id("toggle-theme", "Changer de thème")
-                        .accelerator("CmdOrCtrl+T")
+                        .accelerator("Ctrl+T")
                         .build(app)?,
                 )
                 .separator()
                 .item(
                     &MenuItemBuilder::with_id("devtools", "Outils de développement")
                         .accelerator("F12")
+                        .build(app)?,
+                )
+                .build()?;
+
+            let format_menu = SubmenuBuilder::new(app, "Format")
+                .item(
+                    &MenuItemBuilder::with_id("bold", "Gras")
+                        .accelerator("Ctrl+B")
+                        .build(app)?,
+                )
+                .item(
+                    &MenuItemBuilder::with_id("italic", "Italique")
+                        .accelerator("Ctrl+I")
                         .build(app)?,
                 )
                 .build()?;
@@ -165,6 +207,7 @@ pub fn run() {
             let menu = MenuBuilder::new(app)
                 .item(&file_menu)
                 .item(&edit_menu)
+                .item(&format_menu)
                 .item(&view_menu)
                 .item(&help_menu)
                 .build()?;
@@ -174,7 +217,6 @@ pub fn run() {
             app.on_menu_event(move |app, event| {
                 let id = event.id().0.as_str();
                 match id {
-                    "quit" => app.exit(0),
                     "devtools" => {
                         if let Some(w) = app.get_webview_window("main") {
                             #[cfg(debug_assertions)]

@@ -48,10 +48,14 @@ export async function setupTauriBridge() {
       listen('before-close', () => callback());
     },
 
-    confirmClose(ok) {
-      invoke('confirm_close', { ok }).catch((e) =>
+    confirmClose(ok, isQuit = false) {
+      invoke('confirm_close', { ok, isQuit }).catch((e) =>
         console.error('confirm_close failed', e),
       );
+    },
+
+    async askClose() {
+      return await invoke('ask_close');
     },
   };
 

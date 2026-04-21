@@ -104,6 +104,25 @@ function setCurrentFile(filePath) {
   syncWindowTitle();
 }
 
+// ─── Fichier ──────────────────────────────────────────────────────────────────
+async function newFile() {
+  if (state.isDirty) {
+    let ok = false;
+    if (isElectron && window.electronAPI.askClose) {
+      ok = await window.electronAPI.askClose();
+    } else {
+      ok = confirm('Des modifications non enregistrées seront perdues. Créer un nouveau fichier quand même ?');
+    }
+    if (!ok) return;
+  }
+  
+  editor.value = '';
+  setCurrentFile(null);
+  setDirty(false);
+  renderMarkdown();
+  updateStats();
+}
+
 // ─── Toast notifications ───────────────────────────────────────────────────
 function toast(message, type = 'success') {
   let container = document.getElementById('toast-container');
@@ -287,6 +306,7 @@ function toggleTheme() {
 document.addEventListener('keydown', (e) => {
   if (e.ctrlKey || e.metaKey) {
     switch (e.key) {
+      case 'n': e.preventDefault(); newFile(); break;
       case 'o': e.preventDefault(); openFile(); break;
       case 's':
         e.preventDefault();
@@ -345,9 +365,13 @@ if (isElectron) {
   // Le menu natif enverra des événements via ipcRenderer
   window.electronAPI.onMenuAction?.((action) => {
     switch (action) {
+      case 'new':     newFile();     break;
       case 'open':    openFile();    break;
       case 'save':    saveFile();    break;
       case 'save-as': saveFileAs();  break;
+      case 'bold':    applyFormat('bold'); break;
+      case 'italic':  applyFormat('italic'); break;
+      case 'quit':    requestClose(true); break;
       case 'about':
         document.getElementById('about-modal').classList.remove('hidden');
         document.getElementById('modal-overlay').classList.remove('hidden');
@@ -356,15 +380,22 @@ if (isElectron) {
     }
   });
 
-  // Confirmation avant fermeture si non sauvegardé
-  window.electronAPI.onBeforeClose?.(() => {
+  async function requestClose(isQuit = false) {
     if (state.isDirty) {
-      const ok = confirm('Des modifications non enregistrées seront perdues. Quitter quand même ?');
-      window.electronAPI.confirmClose(ok);
+      let ok = false;
+      if (window.electronAPI.askClose) {
+        ok = await window.electronAPI.askClose();
+      } else {
+        ok = confirm('Des modifications non enregistrées seront perdues. Quitter quand même ?');
+      }
+      window.electronAPI.confirmClose(ok, isQuit);
     } else {
-      window.electronAPI.confirmClose(true);
+      window.electronAPI.confirmClose(true, isQuit);
     }
-  });
+  }
+
+  // Confirmation avant fermeture si non sauvegardé
+  window.electronAPI.onBeforeClose?.(() => requestClose(false));
 }
 
 // ─── Contenu de démonstration ─────────────────────────────────────────────────
